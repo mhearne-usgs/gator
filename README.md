@@ -13,19 +13,19 @@ Config file should look something like this:
 
 >[CONFIG]
 >
->\#filename extensions for the ISF and quakeml files
->ISF_EXTENSION = ISF_Verified
+>\#filename extensions for the ISF and quakeml files<br/>
+>ISF_EXTENSION = ISF_Verified<br/>
 >
->QUAKEML_EXTENSION = quakeml_Verified
+>QUAKEML_EXTENSION = quakeml_Verified<br/>
 >
->\#location of the output Hydra data
->PDEFOLDER = F:\Hydra\Output\PDE
+>\#location of the output Hydra data<br/>
+>PDEFOLDER = F:\Hydra\Output\PDE<br/>
 >
->\#time since last file update - in minutes
->TIMEWINDOW = 4
+>\#time since last file update - in minutes<br/>
+>TIMEWINDOW = 4<br/>
 >
->\#FTP url where output will be transferred
->SERVER = ftp://ftpint.usgs.gov/pub/cr/co/golden/idc
+>\#FTP url where output will be transferred<br/>
+>SERVER = ftp://ftpint.usgs.gov/pub/cr/co/golden/idc<br/>
 
 Usage:
 =====
