@@ -3,6 +3,12 @@ gator
 
 Hydra ISF and quakeML aggreGATOR
 
+Installation:
+=====
+Run: python setup.py
+
+The configuration file should be installed in $HOME/gator.ini by the setup process.
+
 Usage:
 =====
 usage: aggregate.py [-h] [-n]
