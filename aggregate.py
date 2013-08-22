@@ -111,11 +111,11 @@ def main(args):
         configfile = homecfg
     config = ConfigParser.ConfigParser()
     config.readfp(open(configfile))
-    pdefolder = config.get('FILES','PDEFOLDER')
-    timewindow = int(config.get('FILES','TIMEWINDOW'))*60 #we want this time window in minutes
-    ftpserver = config.get('FTP','SERVER')
-    isf_extension = config.get('FILES','ISF_EXTENSION')
-    quakeml_extension = config.get('FILES','QUAKEML_EXTENSION')
+    pdefolder = config.get('CONFIG','PDEFOLDER')
+    timewindow = int(config.get('CONFIG','TIMEWINDOW'))*60 #we want this time window in minutes
+    ftpserver = config.get('CONFIG','SERVER')
+    isf_extension = config.get('CONFIG','ISF_EXTENSION')
+    quakeml_extension = config.get('CONFIG','QUAKEML_EXTENSION')
     weeks = getWeeks(pdefolder,isf_extension,quakeml_extension)
     for week,weekdata in weeks.iteritems():
         isffiles,quakemlfiles,updateTime = weekdata
