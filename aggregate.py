@@ -12,6 +12,22 @@ import argparse
 
 CONFIG = 'gator.ini'
 
+def wipeFTP(ftpserver):
+    urlparts = urlparse.urlparse(ftpserver)
+    ftp = ftplib.FTP(urlparts.netloc)
+    ftp.login()
+    dirparts = urlparts.path.strip('/').split('/')
+    for d in dirparts:
+        try:
+            ftp.cwd(d)
+        except ftplib.error_perm,msg:
+            raise Exception,msg
+    ftpfiles = ftp.nlst()
+    for f in ftpfiles:
+        ftp.delete(f)
+        continue
+    return len(ftpfiles)
+
 def pushFiles(filenames,ftpstr):
     try:
         urlparts = urlparse.urlparse(ftpstr)
@@ -30,13 +46,7 @@ def pushFiles(filenames,ftpstr):
         for filename in filenames:
             pname,fname = os.path.split(filename)
             cmd = "STOR " + fname
-            try:
-                wd = os.getcwd()
-                os.chdir(pname)
-                ftp.storbinary(cmd,open(fname,"rb"),1024) #actually send the file
-                os.chdir(wd)
-            except Exception,msg:
-                os.chdir(wd)
+            ftp.storbinary(cmd,open(filename,"rb"),1024) #actually send the file
         ftp.quit()
     except Exception,msg:
         raise Exception,msg
@@ -50,51 +60,63 @@ def pushFiles(filenames,ftpstr):
         urlpaths.append(urlpath)
     return urlpaths
 
-def getWeeks(pdefolder,isfext,quakeext):
-    allfiles = os.listdir(pdefolder)
+def getWeekInfo(flist):
     weeks = {}
-    for tfile in allfiles:
-        fullfile = os.path.join(pdefolder,tfile)
-        if fullfile.endswith(isfext):
-            ftype = 'isf'
-        elif fullfile.endswith(quakeext):
-            ftype = 'quakeml'
-        else: #unknown file type - skip it
-            continue
+    for fullfile in flist:
         ftime = datetime.datetime.fromtimestamp(os.path.getmtime(fullfile))
+        fpath,tfile = os.path.split(fullfile)
         parts = tfile.split('_')
         week = parts[0]
         if week not in weeks.keys():
-            if ftype == 'isf':
-                weeks[week] = ([fullfile],[],ftime)
-            else:
-                weeks[week] = ([],[fullfile],ftime)
+            weeks[week] = ([fullfile],ftime)
         else:
-            isffiles,quakemlfiles,weektime = weeks[week]
-            if ftype == 'isf':
-                isffiles.append(fullfile)
-            else:
-                quakemlfiles.append(fullfile)
+            tfiles,weektime = weeks[week]
             if ftime > weektime:
                 weektime = ftime
-            weeks[week] = (isffiles,quakemlfiles,weektime)
-            
+            tfiles.append(fullfile)
+            weeks[week] = (tfiles,weektime)
     return weeks
 
-def aggregateFiles(week,isffiles,quakemlfiles):
-    pdepath,pdefile = os.path.split(isffiles[0])
-    mycatfile = os.path.join(pdepath,'%s_cat.isf' % week)
-    myzipfile = os.path.join(pdepath,'%s_cat_quakeml.zip' % week)
-    fcat = open(mycatfile,'wt')
-    for ifile in isffiles:
-        fcat.write(open(ifile,'rt').read())
-    fcat.close()
-    myzip = zipfile.ZipFile(myzipfile,'w',zipfile.ZIP_DEFLATED)
-    for qfile in quakemlfiles:
-        arcpath,arcname = os.path.split(qfile)
-        myzip.write(qfile,arcname)
-    myzip.close()
-    return (mycatfile,myzipfile)
+def getWeeks(isffolder,quakemlfolder):
+    isffiles = os.listdir(isffolder)
+    isffiles = [os.path.join(isffolder,ifile) for ifile in isffiles]
+    quakemlfiles = os.listdir(quakemlfolder)
+    quakemlfiles = [os.path.join(quakemlfolder,ifile) for ifile in quakemlfiles]
+    isfweeks = getWeekInfo(isffiles)
+    quakeweeks = getWeekInfo(quakemlfiles)
+    return (quakeweeks,isfweeks)
+
+def aggregate(week,files,mode):
+    ppath,pfile = os.path.split(files[0])
+    if mode == 'quakeml':
+        mycatfile = os.path.join(ppath,'%s_cat_quakeml.zip' % week)
+        myzip = zipfile.ZipFile(mycatfile,'w',zipfile.ZIP_DEFLATED)
+        for qfile in files:
+            arcpath,arcname = os.path.split(qfile)
+            myzip.write(qfile,arcname)
+        myzip.close()
+    else:
+        mycatfile = os.path.join(ppath,'%s_cat.isf' % week)
+        fcat = open(mycatfile,'wt')
+        for ifile in files:
+            fcat.write(open(ifile,'rt').read())
+        fcat.close()
+    
+    return mycatfile
+
+def pushWeeks(weeks,timewindow,mode,ftpserver,cleanUp=True):
+    tnow = datetime.datetime.now()
+    for week,weekdata in weeks.iteritems():
+        files,updateTime = weekdata
+        dt = tnow - updateTime
+        dtseconds = dt.days*86400 + dt.seconds
+        if dtseconds > timewindow:
+            catfile = aggregate(week,files,mode)
+            urlpaths = pushFiles([catfile],ftpserver)
+            os.remove(catfile)
+        if cleanUp:
+            for f in files:
+                os.remove(f)
 
 def main(args):
     tnow = datetime.datetime.now()
@@ -111,31 +133,31 @@ def main(args):
         configfile = homecfg
     config = ConfigParser.ConfigParser()
     config.readfp(open(configfile))
-    pdefolder = config.get('CONFIG','PDEFOLDER')
+    isffolder = config.get('CONFIG','ISFFOLDER')
+    quakemlfolder = config.get('CONFIG','QUAKEMLFOLDER')
     timewindow = int(config.get('CONFIG','TIMEWINDOW'))*60 #we want this time window in minutes
     ftpserver = config.get('CONFIG','SERVER')
-    isf_extension = config.get('CONFIG','ISF_EXTENSION')
-    quakeml_extension = config.get('CONFIG','QUAKEML_EXTENSION')
-    weeks = getWeeks(pdefolder,isf_extension,quakeml_extension)
-    for week,weekdata in weeks.iteritems():
-        isffiles,quakemlfiles,updateTime = weekdata
-        dt = tnow - updateTime
-        dtseconds = dt.days*86400 + dt.seconds
-        if dtseconds > timewindow:
-            catfile,zipfile = aggregateFiles(week,isffiles,quakemlfiles)
-            urlpaths = pushFiles([catfile,zipfile],ftpserver)
-            os.remove(catfile)
-            os.remove(zipfile)
-            if not args.noClean:
-                for ifile in isffiles:
-                    os.remove(ifile)
-                for qfile in quakemlfiles:
-                    os.remove(qfile)
+
+    #if they want to wipe out the ftp, do that and then quit
+    if args.wipeFTP:
+        resp = raw_input('Are you sure you want to erase the contents of FTP folder %s? y/[n] ' % ftpserver)
+        if resp.strip().lower() != 'y':
+            sys.exit(0)
+        ndeleted = wipeFTP(ftpserver)
+        print '%i files deleted.  Exiting.' % ndeleted
+        sys.exit(0)
+    
+    quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder)
+    pushWeeks(quakeweeks,timewindow,'quakeml',ftpserver,cleanUp=not args.noClean)
+    pushWeeks(isfweeks,timewindow,'isf',ftpserver,cleanUp=not args.noClean)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Concatenate and transfer Hydra output files to FTP.')
     parser.add_argument('-n','--no-clean',dest='noClean', default=False,action='store_true',
                         help='Do NOT delete input ISF and QuakeML files after transfer')
+    parser.add_argument('-w','--wipe-ftp',dest='wipeFTP', default=False,action='store_true',
+                        help='Wipe out all files on destination FTP folder (use with caution!)')
     arguments = parser.parse_args()
     main(arguments)
     
