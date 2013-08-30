@@ -114,9 +114,9 @@ def pushWeeks(weeks,timewindow,mode,ftpserver,cleanUp=True):
             catfile = aggregate(week,files,mode)
             urlpaths = pushFiles([catfile],ftpserver)
             os.remove(catfile)
-        if cleanUp:
-            for f in files:
-                os.remove(f)
+            if cleanUp:
+                for f in files:
+                    os.remove(f)
 
 def main(args):
     tnow = datetime.datetime.now()
