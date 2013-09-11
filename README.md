@@ -31,10 +31,14 @@ SERVER = ftp://ftpint.usgs.gov/pub/cr/co/golden/idc
 
 Usage:
 =====
-usage: aggregate.py [-h] [-n]
+<pre>
+usage: aggregate.py [-h] [-n] [-w]
 
 Concatenate and transfer Hydra output files to FTP.
 
-optional arguments:<br/>
-  -h, --help      show this help message and exit<br/>
-  -n, --no-clean  Do NOT delete input files after transfer
+optional arguments:
+  -h, --help      show this help message and exit
+  -n, --no-clean  Do NOT delete input ISF and QuakeML files after transfer
+  -w, --wipe-ftp  Wipe out all files on destination FTP folder (use with
+                  caution!)
+</pre>
