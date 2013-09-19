@@ -148,8 +148,10 @@ def main(args):
         sys.exit(0)
     
     quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder)
-    pushWeeks(quakeweeks,timewindow,'quakeml',ftpserver,cleanUp=not args.noClean)
-    pushWeeks(isfweeks,timewindow,'isf',ftpserver,cleanUp=not args.noClean)
+    isfloc = urlparse.urljoin(ftpserver,config.get('CONFIG','FTPISF'))
+    quakeloc = urlparse.urljoin(ftpserver,config.get('CONFIG','FTPQUAKEML'))
+    pushWeeks(quakeweeks,timewindow,'quakeml',quakeloc,cleanUp=not args.noClean)
+    pushWeeks(isfweeks,timewindow,'isf',isfloc,cleanUp=not args.noClean)
 
 
 if __name__ == '__main__':
