@@ -9,56 +9,29 @@ import sys
 import datetime
 import zipfile
 import argparse
+import subprocess
 
 CONFIG = 'gator.ini'
 
-def wipeFTP(ftpserver):
-    urlparts = urlparse.urlparse(ftpserver)
-    ftp = ftplib.FTP(urlparts.netloc)
-    ftp.login()
-    dirparts = urlparts.path.strip('/').split('/')
-    for d in dirparts:
-        try:
-            ftp.cwd(d)
-        except ftplib.error_perm,msg:
-            raise Exception,msg
-    ftpfiles = ftp.nlst()
-    for f in ftpfiles:
-        ftp.delete(f)
-        continue
-    return len(ftpfiles)
-
-def pushFiles(filenames,ftpstr):
-    try:
-        urlparts = urlparse.urlparse(ftpstr)
-        ftp = ftplib.FTP(urlparts.netloc)
-        ftp.login()
-        dirparts = urlparts.path.strip('/').split('/')
-        for d in dirparts:
-            try:
-                ftp.cwd(d)
-            except ftplib.error_perm,msg:
-                try:
-                    ftp.mkd(d)
-                    ftp.cwd(d)
-                except ftplib.error_perm,msg:
-                    raise Exception,msg
-        for filename in filenames:
-            pname,fname = os.path.split(filename)
-            cmd = "STOR " + fname
-            ftp.storbinary(cmd,open(filename,"rb"),1024) #actually send the file
-        ftp.quit()
-    except Exception,msg:
-        raise Exception,msg
-
-    urlpaths = []
-    for file in filenames:
-        p,f = os.path.split(filename)
-        if not ftpstr.endswith('/'):
-            ftpstr = ftpstr+'/'
-        urlpath = urlparse.urljoin(ftpstr,f)
-        urlpaths.append(urlpath)
-    return urlpaths
+def getCommandOutput(cmd):
+    """
+    Internal method for calling external command.
+    @param cmd: String command ('ls -l', etc.)
+    @return: Three-element tuple containing a boolean indicating success or failure, 
+    the stdout from running the command, and stderr.
+    """
+    proc = subprocess.Popen(cmd,
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE
+                            )
+    stdout,stderr = proc.communicate()
+    retcode = proc.returncode
+    if retcode == 0:
+        retcode = True
+    else:
+        retcode = False
+    return (retcode,stdout,stderr)
 
 def getWeekInfo(flist):
     weeks = {}
@@ -104,7 +77,14 @@ def aggregate(week,files,mode):
     
     return mycatfile
 
-def pushWeeks(weeks,timewindow,mode,ftpserver,cleanUp=True):
+def writeLog(logfolder,state,catfile):
+    tnow = datetime.datetime.utcnow()
+    logfilename = os.path.join(logfolder,'gator_%Y%m%d.log')
+    log = open(logfile,'at')
+    log.write('%s %s %s\n' % (state,tnow.strftime('%Y-%m-%dT%H:%M:%S'),catfile))
+    log.close()
+
+def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True):
     tnow = datetime.datetime.now()
     for week,weekdata in weeks.iteritems():
         files,updateTime = weekdata
@@ -112,7 +92,21 @@ def pushWeeks(weeks,timewindow,mode,ftpserver,cleanUp=True):
         dtseconds = dt.days*86400 + dt.seconds
         if dtseconds > timewindow:
             catfile = aggregate(week,files,mode)
-            urlpaths = pushFiles([catfile],ftpserver)
+            cmd = '%s %s %s' % (scpcmd,catfile,remote)
+            res,out,err = getCommandOutput(cmd)
+            fsize = os.stat(catfile).st_size
+            rparts = remote.split(':')
+            userinfo = rparts[0]
+            remotefile = os.path.join(parts[1],catfile)
+            cmd = '%s %s ls -l %s' % (sshcmd,userinfo,remotefile)
+            res,out,err = getCommandOutput(cmd)
+            rfsize = int(out.split()[4])
+            if rfsize == fsize: #successful transfer
+                writeLog(logfolder,'INFO',catfile)
+            else: #unsuccessful transfer
+                writeLog(logfolder,'ERROR',catfile)
+                cleanUp = False #don't delete the source files when something's wrong
+            #do something like pssh user@remote md5sum
             os.remove(catfile)
             if cleanUp:
                 for f in files:
@@ -136,30 +130,28 @@ def main(args):
     isffolder = config.get('CONFIG','ISFFOLDER')
     quakemlfolder = config.get('CONFIG','QUAKEMLFOLDER')
     timewindow = int(config.get('CONFIG','TIMEWINDOW'))*60 #we want this time window in minutes
-    ftpserver = config.get('CONFIG','SERVER')
+    logfolder = config.get('CONFIG','LOGFOLDER')
 
-    #if they want to wipe out the ftp, do that and then quit
-    if args.wipeFTP:
-        resp = raw_input('Are you sure you want to erase the contents of FTP folder %s? y/[n] ' % ftpserver)
-        if resp.strip().lower() != 'y':
-            sys.exit(0)
-        ndeleted = wipeFTP(ftpserver)
-        print '%i files deleted.  Exiting.' % ndeleted
-        sys.exit(0)
+    #get all of the information about the scp process
+    scpcmd = config.get('CONFIG','COPY_EXE')
+    sshcmd = config.get('CONFIG','SSH_EXE')
+    remote = config.get('CONFIG','REMOTE_SYSTEM')
+    user = config.get('CONFIG','COPY_USER')
+    remoteroot = config.get('CONFIG','REMOTE_ROOT_FOLDER')
+    remoteisf = '%s@%s:%s' % (user,remote,os.path.join(remoteroot,config.get('CONFIG','REMOTE_ISF_FOLDER')))
+    remotequake = '%s@%s:%s' % (user,remote,os.path.join(remoteroot,config.get('CONFIG','REMOTE_QUAKEML_FOLDER')))
     
+
+    #get the information about the data that we have, and then push it
     quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder)
-    isfloc = urlparse.urljoin(ftpserver,config.get('CONFIG','FTPISF'))
-    quakeloc = urlparse.urljoin(ftpserver,config.get('CONFIG','FTPQUAKEML'))
-    pushWeeks(quakeweeks,timewindow,'quakeml',quakeloc,cleanUp=not args.noClean)
-    pushWeeks(isfweeks,timewindow,'isf',isfloc,cleanUp=not args.noClean)
+    pushWeeks(quakeweeks,timewindow,'quakeml',scpcmd,sshcmd,remotequake,logfolder,cleanUp=not args.noClean)
+    pushWeeks(isfweeks,timewindow,'isf',scpcmd,sshcmd,remoteisf,logfolder,cleanUp=not args.noClean)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Concatenate and transfer Hydra output files to FTP.')
     parser.add_argument('-n','--no-clean',dest='noClean', default=False,action='store_true',
                         help='Do NOT delete input ISF and QuakeML files after transfer')
-    parser.add_argument('-w','--wipe-ftp',dest='wipeFTP', default=False,action='store_true',
-                        help='Wipe out all files on destination FTP folder (use with caution!)')
     arguments = parser.parse_args()
     main(arguments)
     
