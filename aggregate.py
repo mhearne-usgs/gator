@@ -101,6 +101,7 @@ def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True)
             catfile = aggregate(week,files,mode)
             cmd = '%s %s %s' % (scpcmd,catfile,remote)
             res,out,err = getCommandOutput(cmd)
+            print 'Command "%s" result was %s with stdout "%s" and stderr "%s"' % (cmd,res,out,err)
             fsize = os.stat(catfile).st_size
             rparts = remote.split(':')
             userinfo = rparts[0]
@@ -108,6 +109,7 @@ def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True)
             remotefile = os.path.join(rparts[1],lfile)
             cmd = '%s %s ls -l %s' % (sshcmd,userinfo,remotefile)
             res,out,err = getCommandOutput(cmd)
+            print 'Command "%s" result was %s with stdout "%s" and stderr "%s"' % (cmd,res,out,err)
             rfsize = int(out.split()[4])
             if rfsize == fsize: #successful transfer
                 writeLog(logfolder,'INFO',catfile)
