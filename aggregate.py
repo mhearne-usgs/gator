@@ -129,7 +129,7 @@ def main(args):
     mycfg = os.path.join(thisdir,MYCONFIG)
     thiscfg = os.path.join(thisdir,CONFIG)
     homecfg = os.path.join(homedir,CONFIG)
-    if not os.path.isfile(thiscfg) or not os.path.isfile(mycfg) or not os.path.isfile(homecfg):
+    if not os.path.isfile(thiscfg) and not os.path.isfile(mycfg) and not os.path.isfile(homecfg):
         print 'Cannot find a config file in either %s, %s or %s. Exiting.' % (mycfg,thiscfg,homecfg)
         sys.exit(1)
     if os.path.isfile(mycfg):
