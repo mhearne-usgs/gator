@@ -10,7 +10,9 @@ import datetime
 import zipfile
 import argparse
 import subprocess
+import glob
 
+MYCONFIG = 'mygator.ini'
 CONFIG = 'gator.ini'
 
 def getCommandOutput(cmd):
@@ -50,11 +52,13 @@ def getWeekInfo(flist):
             weeks[week] = (tfiles,weektime)
     return weeks
 
-def getWeeks(isffolder,quakemlfolder):
-    isffiles = os.listdir(isffolder)
-    isffiles = [os.path.join(isffolder,ifile) for ifile in isffiles]
-    quakemlfiles = os.listdir(quakemlfolder)
-    quakemlfiles = [os.path.join(quakemlfolder,ifile) for ifile in quakemlfiles]
+def getWeeks(isffolder,quakemlfolder,isfextension,quakemlextension):
+    # isffiles = os.listdir(isffolder)
+    # isffiles = [os.path.join(isffolder,ifile) for ifile in isffiles]
+    isffiles = glob.glob(os.path.join(isffolder,'*.%s' % isfextension))
+    # quakemlfiles = os.listdir(quakemlfolder)
+    # quakemlfiles = [os.path.join(quakemlfolder,ifile) for ifile in quakemlfiles]
+    quakemlfiles = glob.glob(os.path.join(quakemlfolder,'*.%s' % quakemlextension))
     isfweeks = getWeekInfo(isffiles)
     quakeweeks = getWeekInfo(quakemlfiles)
     return (quakeweeks,isfweeks)
@@ -79,8 +83,11 @@ def aggregate(week,files,mode):
 
 def writeLog(logfolder,state,catfile):
     tnow = datetime.datetime.utcnow()
-    logfilename = os.path.join(logfolder,'gator_%Y%m%d.log')
-    log = open(logfile,'at')
+    year = tnow.year
+    month = tnow.month
+    day = tnow.day
+    logfilename = os.path.join(logfolder,'gator_%s.log' % tnow.strftime('%Y%m%d'))
+    log = open(logfilename,'at')
     log.write('%s %s %s\n' % (state,tnow.strftime('%Y-%m-%dT%H:%M:%S'),catfile))
     log.close()
 
@@ -97,7 +104,8 @@ def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True)
             fsize = os.stat(catfile).st_size
             rparts = remote.split(':')
             userinfo = rparts[0]
-            remotefile = os.path.join(rparts[1],catfile)
+            lpath,lfile = os.path.split(catfile)
+            remotefile = os.path.join(rparts[1],lfile)
             cmd = '%s %s ls -l %s' % (sshcmd,userinfo,remotefile)
             res,out,err = getCommandOutput(cmd)
             rfsize = int(out.split()[4])
@@ -116,12 +124,15 @@ def main(args):
     tnow = datetime.datetime.now()
     thisdir = os.path.dirname(os.path.abspath(__file__)) #where is this script?
     homedir = os.path.expanduser('~')
+    mycfg = os.path.join(thisdir,MYCONFIG)
     thiscfg = os.path.join(thisdir,CONFIG)
     homecfg = os.path.join(homedir,CONFIG)
-    if not os.path.isfile(thiscfg) and not os.path.isfile(homecfg):
-        print 'Cannot find a config file in either %s or %s. Exiting.'
+    if (not os.path.isfile(thiscfg) or not os.path.isfile(mycfg)) and not os.path.isfile(homecfg):
+        print 'Cannot find a config file in either %s, %s or %s. Exiting.' % (mycfg,thiscfg,homecfg)
         sys.exit(1)
-    if os.path.isfile(thiscfg):
+    if os.path.isfile(mycfg):
+        configfile = mycfg
+    elif os.path.isfile(thiscfg):
         configfile = thiscfg
     else:
         configfile = homecfg
@@ -129,6 +140,8 @@ def main(args):
     config.readfp(open(configfile))
     isffolder = config.get('CONFIG','ISFFOLDER')
     quakemlfolder = config.get('CONFIG','QUAKEMLFOLDER')
+    isfext = config.get('CONFIG','ISF_EXTENSION')
+    quakemlext = config.get('CONFIG','QUAKEML_EXTENSION')
     timewindow = int(config.get('CONFIG','TIMEWINDOW'))*60 #we want this time window in minutes
     logfolder = config.get('CONFIG','LOGFOLDER')
 
@@ -143,7 +156,7 @@ def main(args):
     
 
     #get the information about the data that we have, and then push it
-    quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder)
+    quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder,isfext,quakemlext)
     pushWeeks(quakeweeks,timewindow,'quakeml',scpcmd,sshcmd,remotequake,logfolder,cleanUp=not args.noClean)
     pushWeeks(isfweeks,timewindow,'isf',scpcmd,sshcmd,remoteisf,logfolder,cleanUp=not args.noClean)
 
