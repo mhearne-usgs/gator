@@ -91,7 +91,7 @@ def writeLog(logfolder,state,catfile):
     log.write('%s %s %s\n' % (state,tnow.strftime('%Y-%m-%dT%H:%M:%S'),catfile))
     log.close()
 
-def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True):
+def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True,doCheck=False):
     tnow = datetime.datetime.now()
     for week,weekdata in weeks.iteritems():
         files,updateTime = weekdata
@@ -99,23 +99,30 @@ def pushWeeks(weeks,timewindow,mode,scpcmd,sshcmd,remote,logfolder,cleanUp=True)
         dtseconds = dt.days*86400 + dt.seconds
         if dtseconds > timewindow:
             catfile = aggregate(week,files,mode)
-            cmd = '%s %s %s' % (scpcmd,catfile,remote)
+            cmd = '%s "%s" %s' % (scpcmd,catfile,remote)
             res,out,err = getCommandOutput(cmd)
             print 'Command "%s" result was %s with stdout "%s" and stderr "%s"' % (cmd,res,out,err)
-            fsize = os.stat(catfile).st_size
-            rparts = remote.split(':')
-            userinfo = rparts[0]
-            lpath,lfile = os.path.split(catfile)
-            remotefile = os.path.join(rparts[1],lfile)
-            cmd = '%s %s ls -l %s' % (sshcmd,userinfo,remotefile)
-            res,out,err = getCommandOutput(cmd)
-            print 'Command "%s" result was %s with stdout "%s" and stderr "%s"' % (cmd,res,out,err)
-            rfsize = int(out.split()[4])
-            if rfsize == fsize: #successful transfer
-                writeLog(logfolder,'INFO',catfile)
-            else: #unsuccessful transfer
-                writeLog(logfolder,'ERROR',catfile)
-                cleanUp = False #don't delete the source files when something's wrong
+            if doCheck:
+                fsize = os.stat(catfile).st_size
+                rparts = remote.split(':')
+                userinfo = rparts[0]
+                lpath,lfile = os.path.split(catfile)
+                remotefile = os.path.join(rparts[1],lfile)
+                cmd = '%s %s ls -l %s' % (sshcmd,userinfo,remotefile)
+                res,out,err = getCommandOutput(cmd)
+                print 'Command "%s" result was %s with stdout "%s" and stderr "%s"' % (cmd,res,out,err)
+                rfsize = int(out.split()[4])
+                if rfsize == fsize: #successful transfer
+                    writeLog(logfolder,'INFO',catfile)
+                else: #unsuccessful transfer
+                    writeLog(logfolder,'ERROR',catfile)
+                    cleanUp = False #don't delete the source files when something's wrong
+            else:
+                if res:
+                    writeLog(logfolder,'INFO',catfile)
+                else: #unsuccessful transfer
+                    writeLog(logfolder,'ERROR',catfile)
+                    cleanUp = False #don't delete the source files when something's wrong
             #do something like pssh user@remote md5sum
             os.remove(catfile)
             if cleanUp:
@@ -155,12 +162,14 @@ def main(args):
     remoteroot = config.get('CONFIG','REMOTE_ROOT_FOLDER')
     remoteisf = '%s@%s:%s' % (user,remote,os.path.join(remoteroot,config.get('CONFIG','REMOTE_ISF_FOLDER')))
     remotequake = '%s@%s:%s' % (user,remote,os.path.join(remoteroot,config.get('CONFIG','REMOTE_QUAKEML_FOLDER')))
-    
+
+    #get toggle state for whether we want to check remote file size
+    doCheck = bool(int(config.get('CONFIG','DOCHECK')))
 
     #get the information about the data that we have, and then push it
     quakeweeks,isfweeks = getWeeks(isffolder,quakemlfolder,isfext,quakemlext)
-    pushWeeks(quakeweeks,timewindow,'quakeml',scpcmd,sshcmd,remotequake,logfolder,cleanUp=not args.noClean)
-    pushWeeks(isfweeks,timewindow,'isf',scpcmd,sshcmd,remoteisf,logfolder,cleanUp=not args.noClean)
+    pushWeeks(quakeweeks,timewindow,'quakeml',scpcmd,sshcmd,remotequake,logfolder,cleanUp=not args.noClean,doCheck=doCheck)
+    pushWeeks(isfweeks,timewindow,'isf',scpcmd,sshcmd,remoteisf,logfolder,cleanUp=not args.noClean,doCheck=doCheck)
 
 
 if __name__ == '__main__':
